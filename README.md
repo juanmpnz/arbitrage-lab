@@ -51,7 +51,7 @@ npm run dev
 
 Pulsa **Conectar cuenta** en el panel. Las consultas se realizan a través del proxy de Vite hacia el backend local (127.0.0.1:8787). Muestra saldos Spot disponibles/bloqueados y permite consultar comisiones de un símbolo. Las comisiones reales se presentan por componentes: no se aplican automáticamente al escáner, ni el saldo real modifica la cuenta virtual. Reinicia el backend después de editar `.env`. Si cambias `API_PORT`, cambia también el puerto del proxy en `vite.config.ts`.
 
-La API admite solo GET `/api/health`, `/api/account` y `/api/commission?symbol=BTCUSDT`; no contiene endpoints de órdenes o retiros. Firma HMAC en el servidor, sincroniza el reloj con Binance, limita el tiempo de espera y reutiliza respuestas por 15 s (saldo) o 60 s (comisiones). El backend escucha únicamente en loopback y rechaza hosts/orígenes externos. Esta configuración es para uso local; no publiques este servicio privado en internet.
+La API de Binance admite consultas GET mediante `/api/health`, `/api/account`, `/api/markets`, `/api/reference-price` y `/api/commission?symbol=BTCUSDT`; el único POST permitido registra el historial local en `/api/opportunities`; no contiene endpoints de órdenes o retiros. Firma HMAC en el servidor, sincroniza el reloj con Binance, limita el tiempo de espera y reutiliza respuestas por 15 s (saldo) o 60 s (comisiones). El backend escucha únicamente en loopback y rechaza hosts/orígenes externos. Esta configuración es para uso local; no publiques este servicio privado en internet.
 
 ```bash
 npm run test:api
@@ -115,3 +115,16 @@ Son comprobaciones preliminares: no certifican aceptación de una orden, restric
 Pruebas de las nuevas reglas: `npm run test:validation`.
 
 El monitor conserva el stream durante la recarga de mercados al conectar la cuenta. Si `/api/markets` falla, utiliza exchangeInfo público live y muestra una advertencia con el error; la evaluación Testnet permanece bloqueada. La consulta de volumen 24 h es opcional y no bloquea los precios. El botón de reconexión también vuelve a cargar las reglas.
+
+
+### Historial de oportunidades
+
+El panel «Historial de oportunidades» registra automáticamente señales positivas observadas por el scanner, tanto en modo manual como con tarifas de cuenta. Se guarda en `data/opportunities.json` en el equipo donde corre el backend, mediante reemplazo atómico del archivo. Esta carpeta no se sube a GitHub. Conserva hasta 1.000 episodios; la interfaz muestra los últimos 50.
+
+La misma ruta, parámetros e importe dentro de una sesión se agrupan mientras se observen de forma continua; una desaparición, cambio de parámetros o interrupción de más de cinco segundos genera un episodio nuevo. Se almacena la primera y última observación, mejor retorno estimado, costos configurados y número de observaciones. El período observado no certifica disponibilidad ejecutable. Reiniciar el servidor conserva los registros pero no presupone continuidad de las señales.
+
+La captura sigue en el navegador: requiere pestaña abierta y backend encendido. Se toman las primeras 50 oportunidades positivas en cada evaluación y se envían observaciones agrupadas cada dos segundos; las señales más breves que la frecuencia del scanner pueden no detectarse. Hasta 20 observaciones se retienen temporalmente si falla el backend; aparece una advertencia si se desborda la cola. No se recuperan señales anteriores a esta actualización.
+
+GET `/api/opportunities` lee registros; POST `/api/opportunities` admite exclusivamente observaciones JSON locales, con validación, límites de tamaño y protección de origen. Los registros son reportes del scanner, no órdenes ni instrucciones confiables de ejecución. La conexión Binance sigue siendo de lectura: no hay endpoints para enviar órdenes o retirar fondos. Historial y paper trading no modifican el saldo real.
+
+Pruebas: `npm run test:history`.

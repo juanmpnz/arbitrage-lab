@@ -25,6 +25,8 @@ export type Opportunity = {
   output: number
   netBps: number
   oldestQuoteMs: number
+  grossOutput?: number
+  legFeeBps?: [number, number, number]
 }
 
 export function buildEdges(markets: Market[], books: Map<string, BookQuote>, now: number): Map<string, Edge[]> {
@@ -59,14 +61,16 @@ export function findOpportunities(
       for (const third of graph.get(second.to) ?? []) {
         if (third.to !== startAsset || new Set([first.symbol, second.symbol, third.symbol]).size !== 3) continue
         let value = amount
+        let grossValue = amount
         for (const leg of [first, second, third]) {
           if (leg.age > maxAgeMs || value > leg.capacity) { value = 0; break }
           value *= leg.rate * factor
+          grossValue *= leg.rate
         }
         if (!value) continue
         const netBps = (value / amount - 1) * 10_000
         if (netBps < minNetBps) continue
-        found.push({ route: [startAsset, first.to, second.to, startAsset], symbols: [first.symbol, second.symbol, third.symbol], input: amount, output: value, netBps, oldestQuoteMs: Math.max(first.age, second.age, third.age) })
+        found.push({ route: [startAsset, first.to, second.to, startAsset], symbols: [first.symbol, second.symbol, third.symbol], input: amount, output: value, grossOutput: grossValue, legFeeBps: [feeBps, feeBps, feeBps], netBps, oldestQuoteMs: Math.max(first.age, second.age, third.age) })
       }
     }
   }

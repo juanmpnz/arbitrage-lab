@@ -42,6 +42,7 @@ export function validateRoute(route: Opportunity, markets: Market[], books: Map<
     }
     return null
   }
+  const legFees: number[] = []
   let value = route.input
   let reservedBNB = route.route[0] === 'BNB' ? route.input : 0
   for (let i = 0; i < 3; i++) {
@@ -95,10 +96,11 @@ export function validateRoute(route: Opportunity, markets: Market[], books: Map<
     // Deduct the economic fee cost even when paid from a separate BNB balance.
     // This conservative estimate also discards rounding dust between legs.
     const cost = standard * (useBNB ? discount : 1) + extra
+    legFees.push(cost * 10_000)
     if (cost >= 1) return fail(`${symbol}: costos inválidos`)
     value = received * (1 - cost) * (1 - context.slippageBps / 10_000)
   }
   const netBps = (value / route.input - 1) * 10_000
   if (netBps < context.minNetBps) return fail('Beneficio insuficiente después de costos y redondeos')
-  return { opportunity: { ...route, output: value, netBps } }
+  return { opportunity: { ...route, grossOutput: route.output, output: value, netBps, legFeeBps: legFees as [number, number, number] } }
 }
