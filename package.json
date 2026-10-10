@@ -16,7 +16,8 @@
     "test:engine": "node --experimental-strip-types tests/arbitrage.test.mjs",
     "test:validation": "node --experimental-strip-types tests/validation.test.mjs",
     "test:history": "node tests/history.test.mjs",
-    "test:execution": "node tests/execution.test.mjs"
+    "test:execution": "node tests/execution.test.mjs",
+    "test:automatic": "node tests/automatic.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

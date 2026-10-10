@@ -58,7 +58,7 @@ export function createExecutor({ reader, file, enabled = false, now = Date.now }
     const legs = []
     for (let i = 0; i < 3; i++) { const leg = planLeg(markets[i], books[i], from, value, fees[i]); legs.push(leg); from = leg.to; value = leg.projected }
     if (from !== asset || !(value > input.amount * 1.0001) || value > input.amount * 1.1) reject('El ciclo no supera el umbral neto de 1 pb con precios limitados y costos conservadores.')
-    return { asset, markets, fees, legs, account, output: value, input: input.amount, symbols: input.symbols }
+    return { asset, markets, fees, books, legs, account, output: value, input: input.amount, symbols: input.symbols }
   }
   return {
     status() { return { enabled, environment, asset, busy, stopped, reserved: state.reserved, limit: 7, runs: state.runs.slice().reverse() } },
@@ -86,7 +86,7 @@ export function createExecutor({ reader, file, enabled = false, now = Date.now }
       if (previews.size >= 64) previews.delete(previews.keys().next().value)
       previews.set(token, { at, input: { symbols: input.symbols, amount: input.amount } })
       for (const [key, value] of previews) if (at - value.at > 15_000) previews.delete(key)
-      return { token, expiresAt: at + 15_000, asset, environment, input: plan.input, output: plan.output, legs: plan.legs, reserved: plan.input * 1.05 }
+      return { token, expiresAt: at + 15_000, asset, environment, input: plan.input, output: plan.output, quoteAgeMs: Math.max(...plan.books.map(book => now() - book.receivedAt)), legs: plan.legs, legFeeBps: plan.legs.map((leg, i) => ['standardCommission', 'specialCommission', 'taxCommission'].reduce((sum, key) => sum + Number(plan.fees[i][key].taker) + Number(plan.fees[i][key][leg.side === 'BUY' ? 'buyer' : 'seller']), 0) * 10000), reserved: plan.input * 1.05 }
     },
     async execute(token) {
       allowed()

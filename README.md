@@ -82,7 +82,7 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 ## Verificación
 
 - Build React/TypeScript/Vite aprobado.
-- 36 pruebas Node: motor/WebSocket, backend firmado, filtros/tarifas, historial persistente y ejecución simulada.
+- 41 pruebas Node: motor/WebSocket, backend firmado, filtros/tarifas, historial persistente y ejecución simulada.
 - Ejecutor verificado con un exchange simulado: tres tramos completos, presupuesto duradero, exclusión entre procesos, tokens de un solo uso, rechazo de duplicados, pérdida de rentabilidad, fills parciales, timeout incierto, parada y conciliación.
 - No se enviaron órdenes reales ni se validaron claves de usuario o una ejecución completa contra Spot Testnet desde este entorno.
 
@@ -146,3 +146,26 @@ Un tramo expirado, parcial, rechazado, con comisiones incompletas o rentabilidad
 Endpoints locales: GET `/api/execution`; POST `/api/execution/preview`, `/api/execution/run`, `/api/execution/stop`, `/api/execution/reconcile`. Solo JSON, acceso local y límites de tamaño. No existen endpoints de retiros. Esta funcionalidad no se ha probado con fondos reales ni con claves de usuario en este entorno. Pruebas con un exchange simulado: `npm run test:execution`.
 
 El ejecutor crea además un bloqueo de archivo durante cada ciclo para impedir operaciones concurrentes desde dos procesos locales que compartan el mismo diario. Si el servidor se interrumpe, un bloqueo o una ejecución pendiente requieren inspección; no se elimina automáticamente para continuar operando. Si no llegó a enviarse ninguna orden, la reserva del intento se libera.
+
+
+### Selección y ejecución automáticas en el backend
+
+Agrega al `.env`:
+
+```env
+BINANCE_TRADING_ENABLED=true
+BINANCE_AUTO_ENABLED=true
+AUTO_TRADE_AMOUNT=6.6
+```
+
+Con permisos Spot en la clave, el worker arranca junto con `npm run dev:api`. Selecciona hasta 900 mercados Spot LIMIT, prioriza el activo inicial (USDS live / USDT Testnet), mantiene un WebSocket propio del entorno y evalúa ciclos cada segundo. No necesita navegador abierto, pulsar «Conectar cuenta», copiar pares ni confirmar cada operación.
+
+Las candidatas se ordenan por margen bruto. Prueba una de las 20 mejores por evaluación, con 30 segundos de espera por ruta para limitar consultas. Solo ejecuta cuando la previsualización del backend verifica saldo, filtros, precios límite y costos conservadores. El ejecutor vuelve a verificar antes del envío y entre tramos. Los registros de señales verificadas se guardan en el historial con una sesión del servidor, independientemente de la captura del navegador. Las candidatas brutas rechazadas no son ganancias ni se registran como oportunidades netas.
+
+El límite acumulado sigue siendo 7, con reserva del 5% e importe máximo 6,6 por intento. No aumenta presupuesto ni reinvierte ganancias automáticamente. Un ciclo REVIEW, una parada o presupuesto insuficiente detienen el worker. «Detener siguientes tramos» detiene también la detección automática. Las desconexiones recuperables del stream se reconectan, pero nunca se reenvía una orden incierta. Errores de claves/firma y límites críticos detienen el worker.
+
+El panel «Ejecución Spot» muestra estado automático, stream, ciclos, motivo de espera o parada y órdenes realizadas. Con automático configurado, el formulario manual queda deshabilitado para evitar confusión.
+
+El backend necesita seguir encendido y conectado: cerrar el navegador no lo detiene; apagar/suspender el equipo, cerrar el proceso o perder conectividad sí impide evaluar/operar. Para funcionar cuando el equipo está apagado necesita despliegue en un servidor siempre encendido; ese despliegue no se ha realizado. No hay rentabilidad garantizada: puede permanecer esperando sin encontrar una ruta neta, y una ejecución puede perder dinero o dejar activos intermedios.
+
+Pruebas del worker, sin fondos reales: `npm run test:automatic`.

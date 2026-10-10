@@ -5,8 +5,9 @@ import { pathToFileURL } from 'node:url'
 import { ApiError, createBinanceReader } from './binance.mjs'
 import { createOpportunityStore } from './opportunities.mjs'
 import { createExecutor } from './execution.mjs'
+import { createAutomaticWorker } from './automatic.mjs'
 
-export function createApiServer(reader, history = null, executor = null) {
+export function createApiServer(reader, history = null, executor = null, automatic = null) {
   return createServer(async (req, res) => {
     const send = (status, data) => {
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
@@ -16,7 +17,7 @@ export function createApiServer(reader, history = null, executor = null) {
     if (!localHost(`http://${req.headers.host}`) || (req.headers.origin && !localHost(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') return send(403, { error: 'El backend solo admite acceso local.' })
     const url = new URL(req.url, 'http://localhost')
     try {
-      if (req.method === 'GET' && url.pathname === '/api/execution') return executor ? send(200, executor.status()) : send(503, { error: 'Ejecutor no configurado.' })
+      if (req.method === 'GET' && url.pathname === '/api/execution') return executor ? send(200, { ...executor.status(), automatic: automatic?.status() ?? { enabled: false, running: false } }) : send(503, { error: 'Ejecutor no configurado.' })
       if (req.method === 'POST' && ['/api/execution/preview', '/api/execution/run', '/api/execution/stop', '/api/execution/reconcile'].includes(url.pathname)) {
         if (!executor) return send(503, { error: 'Ejecutor no configurado.' })
         if (req.headers['content-type']?.split(';')[0] !== 'application/json') return send(415, { error: 'Se requiere application/json.' })
@@ -25,7 +26,7 @@ export function createApiServer(reader, history = null, executor = null) {
         let data
         try { data = JSON.parse(body) } catch { return send(400, { error: 'JSON inválido.' }) }
         if (url.pathname.endsWith('/reconcile')) return send(200, await executor.reconcile(data.id))
-        if (url.pathname.endsWith('/stop')) return send(200, executor.stop())
+        if (url.pathname.endsWith('/stop')) { automatic?.stop(); return send(200, executor.stop()) }
         if (url.pathname.endsWith('/preview')) return send(200, await executor.preview(data))
         return send(200, await executor.execute(data.token))
       }
@@ -40,7 +41,7 @@ export function createApiServer(reader, history = null, executor = null) {
       }
       if (req.method !== 'GET') return send(405, { error: 'Solo se permiten consultas y registro local de oportunidades.' })
       if (url.pathname === '/api/opportunities') return history ? send(200, { records: history.list() }) : send(503, { error: 'Historial no configurado.' })
-      if (url.pathname === '/api/health') return send(200, { mode: executor?.status().enabled ? 'manual-trading' : 'read-only', configured: reader.configured, environment: reader.environment })
+      if (url.pathname === '/api/health') return send(200, { mode: automatic?.status().running ? 'automatic-trading' : executor?.status().enabled ? 'manual-trading' : 'read-only', configured: reader.configured, environment: reader.environment })
       if (url.pathname === '/api/markets') return send(200, await reader.markets())
       if (url.pathname === '/api/reference-price') return send(200, await reader.referencePrice(url.searchParams.get('symbol') ?? ''))
       if (url.pathname === '/api/account') return send(200, await reader.account())
@@ -57,6 +58,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const reader = createBinanceReader({ apiKey: process.env.BINANCE_API_KEY, apiSecret: process.env.BINANCE_API_SECRET, testnet: process.env.BINANCE_TESTNET === 'true' })
   const history = createOpportunityStore(resolve('data/opportunities.json'))
   const executor = createExecutor({ reader, file: resolve(`data/execution-${reader.environment}.json`), enabled: process.env.BINANCE_TRADING_ENABLED === 'true' })
-  const server = createApiServer(reader, history, executor)
-  server.listen(port, '127.0.0.1', () => console.log(`Backend local en http://127.0.0.1:${port} (${reader.environment}, claves ${reader.configured ? 'configuradas' : 'pendientes'})`))
+  const automatic = createAutomaticWorker({ reader, executor, history, enabled: process.env.BINANCE_AUTO_ENABLED === 'true', amount: Number(process.env.AUTO_TRADE_AMOUNT ?? 6.6) })
+  const server = createApiServer(reader, history, executor, automatic)
+  server.on('close', () => automatic.stop())
+  server.listen(port, '127.0.0.1', () => { console.log(`Backend local en http://127.0.0.1:${port} (${reader.environment}, claves ${reader.configured ? 'configuradas' : 'pendientes'})`); automatic.start() })
 }
