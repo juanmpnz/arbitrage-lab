@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-El navegador consulta `exchangeInfo` y `ticker/24hr` para elegir hasta 900 pares Spot activos por volumen aproximado en USD. Luego se suscribe a sus streams individuales `<symbol>@bookTicker` por WebSocket. Los precios se mantienen localmente; no se guardan claves ni se envía información privada.
+El navegador consulta `exchangeInfo` y `ticker/24hr` para elegir hasta 900 pares Spot activos por volumen aproximado en USD. Luego se suscribe a sus streams individuales `<symbol>@bookTicker` por WebSocket, usando TLS por el puerto 443 y lotes de 100 pares con pausa entre solicitudes. Binance publica estos streams Spot por `:443` o `:9443`; se usa 443 para redes que bloquean puertos TLS no estándar. Los precios se mantienen localmente; no se guardan claves ni se envía información privada. Las respuestas de suscripción con error se muestran en el panel.
 
 ```bash
 npm run build
@@ -47,7 +47,7 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 
 ## Verificación
 
-- Cuatro pruebas del motor TypeScript y seis pruebas del motor Python aprobadas.
+- Cinco pruebas del motor TypeScript (incluidas conexión, lotes y rechazos WebSocket) y seis pruebas del motor Python aprobadas.
 - Demo Python ejecutada; una señal sintética pasa el umbral configurado.
 - La consulta REST real anterior recibió 3.727 cotizaciones en 6,026 segundos y descartó el snapshot por latencia.
 - La interfaz y la suscripción WebSocket quedan listas para comprobar localmente con `npm install` y `npm run dev`. En el entorno de autoría no está disponible el compilador TypeScript ni el acceso al registro de paquetes, así que no se pudo validar el bundle de Vite aquí.

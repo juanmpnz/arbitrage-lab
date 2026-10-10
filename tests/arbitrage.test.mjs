@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { findOpportunities } from '../src/core/arbitrage.ts'
+import { connectMarketStream } from '../src/core/binance.ts'
 
 const markets = [
   { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', status: 'TRADING', isSpotTradingAllowed: true },
@@ -37,4 +38,39 @@ test('rejects a route when the best ask cannot cover the virtual input', () => {
 
 test('does not emit a route when costs put it below the net threshold', () => {
   assert.deepEqual(findOpportunities(markets, books, { ...params, feeBps: 100, slippageBps: 50 }, 1500), [])
+})
+
+test('connects on TLS port 443 and subscribes in bounded batches', async () => {
+  const previousWindow = globalThis.window
+  const previousWebSocket = globalThis.WebSocket
+  const sockets = []
+  class FakeWebSocket {
+    static CONNECTING = 0
+    static OPEN = 1
+    readyState = 0
+    sent = []
+    constructor(url) { this.url = url; sockets.push(this) }
+    send(payload) { this.sent.push(JSON.parse(payload)) }
+    open() { this.readyState = 1; this.onopen?.() }
+    close() { this.readyState = 3; this.onclose?.() }
+    message(data) { this.onmessage?.({ data: JSON.stringify(data) }) }
+  }
+  globalThis.window = { setTimeout, clearTimeout }
+  globalThis.WebSocket = FakeWebSocket
+  try {
+    const errors = []
+    const handlers = { onStatus() {}, onQuote() {}, onStats() {}, onError: (message) => errors.push(message) }
+    const stop = connectMarketStream(Array.from({ length: 205 }, (_, index) => ({ symbol: `PAIR${index}` })), handlers)
+    const socket = sockets[0]
+    assert.match(socket.url, /:443\/ws$/)
+    socket.open()
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    assert.deepEqual(socket.sent.map((request) => request.params.length), [100, 100, 5])
+    socket.message({ id: 42, code: 2, msg: 'Invalid request' })
+    assert.match(errors[0], /Binance rechazó la suscripción/)
+    stop()
+  } finally {
+    globalThis.window = previousWindow
+    globalThis.WebSocket = previousWebSocket
+  }
 })

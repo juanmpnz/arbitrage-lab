@@ -1,8 +1,12 @@
 import type { BookQuote, Market } from './arbitrage'
 
 const REST = 'https://data-api.binance.vision/api/v3'
-const SOCKET = 'wss://stream.binance.com:9443/ws'
+// Binance publishes the Spot stream on both 9443 and 443. Prefer 443 because
+// some networks and browser environments block non-standard TLS ports.
+const SOCKET = 'wss://stream.binance.com:443/ws'
 const MAX_STREAMS = 900
+const SUBSCRIPTION_BATCH_SIZE = 100
+const SUBSCRIPTION_INTERVAL_MS = 300
 const BRIDGE_ASSETS = new Set(['USDT', 'USDC', 'BTC', 'ETH', 'BNB', 'FDUSD'])
 
 type Ticker24h = { symbol: string; lastPrice: string; quoteVolume: string }
@@ -42,17 +46,32 @@ export function connectMarketStream(markets: Market[], handlers: Handlers): () =
   let socket: WebSocket | null = null
   let retryTimer = 0
   let rotateTimer = 0
+  let connectTimer = 0
+  let subscriptionTimers: number[] = []
   let failures = 0
 
   const connect = () => {
     if (stopped) return
     handlers.onStatus(failures ? 'reconnecting' : 'connecting')
     socket = new WebSocket(SOCKET)
+    connectTimer = window.setTimeout(() => {
+      if (socket?.readyState === WebSocket.CONNECTING) {
+        handlers.onError('Binance no completó la conexión WebSocket en 10 segundos.')
+        socket.close()
+      }
+    }, 10_000)
     socket.onopen = () => {
       if (stopped || !socket) return
+      window.clearTimeout(connectTimer)
       failures = 0
       handlers.onStatus('loading')
-      socket.send(JSON.stringify({ method: 'SUBSCRIBE', params: markets.map((market) => `${market.symbol.toLowerCase()}@bookTicker`), id: Date.now() }))
+      const streams = markets.map((market) => `${market.symbol.toLowerCase()}@bookTicker`)
+      const batches = Array.from({ length: Math.ceil(streams.length / SUBSCRIPTION_BATCH_SIZE) }, (_, index) =>
+        streams.slice(index * SUBSCRIPTION_BATCH_SIZE, (index + 1) * SUBSCRIPTION_BATCH_SIZE))
+      subscriptionTimers = batches.map((params, index) => window.setTimeout(() => {
+        if (socket?.readyState !== WebSocket.OPEN) return
+        socket.send(JSON.stringify({ method: 'SUBSCRIBE', params, id: Date.now() + index }))
+      }, index * SUBSCRIPTION_INTERVAL_MS))
       handlers.onStats({ subscribed: markets.length, messages: 0, lastMessageAt: null })
       // Binance disconnects a stream connection after 24h; rotate before the limit.
       rotateTimer = window.setTimeout(() => socket?.close(1000, 'Planned connection rotation'), 23 * 60 * 60 * 1000)
@@ -60,7 +79,12 @@ export function connectMarketStream(markets: Market[], handlers: Handlers): () =
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(String(event.data)) as Record<string, unknown>
-        if (data.result === null || data.id) return
+        if (data.code !== undefined || data.msg !== undefined) {
+          handlers.onError(`Binance rechazó la suscripción (${String(data.code ?? 'sin código')}): ${String(data.msg ?? 'respuesta inesperada')}`)
+          return
+        }
+        // A successful SUBSCRIBE acknowledgement has an id and a null result.
+        if (data.id !== undefined && data.result === null) return
         const symbol = String(data.s ?? '')
         if (!symbol) return
         const quote: BookQuote = {
@@ -75,9 +99,13 @@ export function connectMarketStream(markets: Market[], handlers: Handlers): () =
     }
     socket.onerror = () => handlers.onError('La conexión WebSocket tuvo un error.')
     socket.onclose = () => {
+      window.clearTimeout(connectTimer)
       window.clearTimeout(rotateTimer)
+      subscriptionTimers.forEach(window.clearTimeout)
+      subscriptionTimers = []
       if (stopped) return
       failures += 1
+      handlers.onError('Binance cerró el stream. Se intentará reconectar automáticamente.')
       handlers.onStatus('reconnecting')
       retryTimer = window.setTimeout(connect, Math.min(30_000, 1_000 * 2 ** Math.min(failures, 5)))
     }
@@ -85,8 +113,10 @@ export function connectMarketStream(markets: Market[], handlers: Handlers): () =
   connect()
   return () => {
     stopped = true
+    window.clearTimeout(connectTimer)
     window.clearTimeout(retryTimer)
     window.clearTimeout(rotateTimer)
+    subscriptionTimers.forEach(window.clearTimeout)
     socket?.close(1000, 'Client stopped')
   }
 }
