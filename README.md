@@ -19,7 +19,13 @@ npm run preview
 npm run test:engine
 ```
 
-El monitor muestra solo rutas cuyas tres cotizaciones tengan menos de dos segundos de antigüedad al calcular. Para cada pata usa el ask al comprar y el bid al vender, descuenta la comisión y el deslizamiento configurados, y limita el tamaño por la cantidad publicada en el mejor precio. El capital es virtual y cada oportunidad representa una simulación independiente.
+El monitor muestra solo rutas cuyas tres cotizaciones tengan menos de dos segundos de antigüedad al calcular. Para cada pata usa el ask al comprar y el bid al vender, descuenta la comisión y el deslizamiento configurados, y limita el tamaño por la cantidad publicada en el mejor precio. Las señales se calculan con un importe virtual; el paper trader opcional mantiene una cuenta separada.
+
+### Paper trading
+
+El panel incluye un simulador de cuenta virtual con saldo inicial de 1.000 USDT. Está pausado al abrir la página y solo ejecuta simulaciones mientras el usuario lo activa y el stream está en directo. Cuando una ruta positiva supera los parámetros actuales, registra una operación y suma su resultado neto estimado al saldo. La misma ruta tiene una pausa de 60 segundos para evitar contar la misma señal continuamente. Saldo e historial se conservan en el almacenamiento local del navegador; no se envían a Binance.
+
+Este primer simulador modela una conversión completa e instantánea con las cotizaciones `bookTicker`, que muestran solo el primer nivel del libro. No modela profundidad adicional, ejecuciones parciales, cambios de precio durante las patas ni fallos intermedios. Por eso es una prueba de flujo y una estimación, no una validación de rentabilidad ejecutable. Si las comisiones o el deslizamiento están configurados en cero, el saldo acumulado también los omite.
 
 Si el navegador bloquea la conexión a Binance por red, país o CORS, el panel lo indicará. No hay proxy para sortear bloqueos. El WebSocket del navegador responde automáticamente a los controles de protocolo y se rota antes del límite de 24 horas; al cerrarse, intenta reconectar con espera creciente.
 
@@ -47,7 +53,7 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 
 ## Verificación
 
-- Cinco pruebas del motor TypeScript (incluidas conexión, lotes y rechazos WebSocket) y seis pruebas del motor Python aprobadas.
+- Siete pruebas del motor TypeScript (motor de rutas, paper trading, conexión, lotes y rechazos WebSocket) y seis pruebas del motor Python aprobadas.
 - Demo Python ejecutada; una señal sintética pasa el umbral configurado.
 - La consulta REST real anterior recibió 3.727 cotizaciones en 6,026 segundos y descartó el snapshot por latencia.
 - La interfaz y la suscripción WebSocket quedan listas para comprobar localmente con `npm install` y `npm run dev`. En el entorno de autoría no está disponible el compilador TypeScript ni el acceso al registro de paquetes, así que no se pudo validar el bundle de Vite aquí.

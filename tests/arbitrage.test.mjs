@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { findOpportunities } from '../src/core/arbitrage.ts'
 import { connectMarketStream } from '../src/core/binance.ts'
+import { createPaperAccount, parsePaperAccount, recordPaperTrade } from '../src/core/paperTrading.ts'
 
 const markets = [
   { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', status: 'TRADING', isSpotTradingAllowed: true },
@@ -38,6 +39,37 @@ test('rejects a route when the best ask cannot cover the virtual input', () => {
 
 test('does not emit a route when costs put it below the net threshold', () => {
   assert.deepEqual(findOpportunities(markets, books, { ...params, feeBps: 100, slippageBps: 50 }, 1500), [])
+})
+
+const paperOpportunity = {
+  route: ['USDT', 'BTC', 'ETH', 'USDT'],
+  symbols: ['BTCUSDT', 'ETHBTC', 'ETHUSDT'],
+  input: 10,
+  output: 10.02,
+  netBps: 20,
+  oldestQuoteMs: 200,
+}
+
+test('paper trading credits only simulated net profit and persists its ledger', () => {
+  const result = recordPaperTrade(createPaperAccount(100), paperOpportunity, 10_000)
+  assert.equal(result.accepted, true)
+  if (!result.accepted) return
+  assert.equal(result.account.balance, 100.02)
+  assert.equal(result.account.totalTrades, 1)
+  assert.ok(Math.abs(result.trade.profit - 0.02) < 1e-12)
+  const restored = parsePaperAccount(JSON.stringify(result.account))
+  assert.equal(restored.balance, 100.02)
+  assert.equal(restored.trades[0].symbols.join('>'), 'BTCUSDT>ETHBTC>ETHUSDT')
+})
+
+test('paper trading prevents repeated, stale, unprofitable and unaffordable routes', () => {
+  const account = createPaperAccount(5)
+  assert.equal(recordPaperTrade(account, paperOpportunity, 10_000).accepted, false)
+  assert.equal(recordPaperTrade(createPaperAccount(100), { ...paperOpportunity, oldestQuoteMs: 2_001 }, 10_000).accepted, false)
+  assert.equal(recordPaperTrade(createPaperAccount(100), { ...paperOpportunity, output: 9.99 }, 10_000).accepted, false)
+  const first = recordPaperTrade(createPaperAccount(100), paperOpportunity, 10_000)
+  assert.equal(first.accepted, true)
+  if (first.accepted) assert.equal(recordPaperTrade(first.account, paperOpportunity, 10_001).accepted, false)
 })
 
 test('connects on TLS port 443 and subscribes in bounded batches', async () => {
