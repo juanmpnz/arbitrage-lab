@@ -18,14 +18,33 @@ type Handlers = {
   onError: (message: string) => void
 }
 
-export async function loadMarkets(startAsset = 'USDT', fromBackend = false): Promise<Market[]> {
-  const [exchangeResponse, tickerResponse] = await Promise.all([
-    fetch(fromBackend ? '/api/markets' : `${REST}/exchangeInfo`, { cache: 'no-store' }),
-    fetch(`${REST}/ticker/24hr`, { cache: 'no-store' }),
-  ])
-  if (!exchangeResponse.ok || !tickerResponse.ok) throw new Error('Binance no respondió al cargar los mercados.')
-  const exchange = await exchangeResponse.json() as ExchangeInfo
-  const tickers = await tickerResponse.json() as Ticker24h[]
+export async function loadMarkets(startAsset = 'USDT', fromBackend = false, onWarning: (message: string) => void = () => {}): Promise<Market[]> {
+  const readExchange = async (url: string): Promise<ExchangeInfo> => {
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
+    if (!response.ok) throw new Error(`No se pudieron cargar los mercados desde ${url.startsWith('/api') ? 'el backend' : 'Binance público'} (HTTP ${response.status}).`)
+    const data = await response.json() as ExchangeInfo
+    if (!Array.isArray(data.symbols)) throw new Error('La respuesta de mercados no contiene símbolos. Comprueba que el backend esté actualizado.')
+    return data
+  }
+  const exchangeTask = (async () => {
+    if (fromBackend) {
+      try { return await readExchange('/api/markets') }
+      catch (cause) {
+        const reason = cause instanceof Error ? cause.message : 'El backend no respondió.'
+        onWarning(`${reason} Se usarán reglas públicas live. Reinicia npm run dev:api si acabas de actualizar. Testnet sigue bloqueado para evaluar rutas.`)
+      }
+    }
+    return readExchange(`${REST}/exchangeInfo`)
+  })()
+  const tickerTask = (async (): Promise<Ticker24h[]> => {
+    try {
+      const response = await fetch(`${REST}/ticker/24hr`, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
+      if (!response.ok) return []
+      const data: unknown = await response.json()
+      return Array.isArray(data) ? data as Ticker24h[] : []
+    } catch { return [] }
+  })()
+  const [exchange, tickers] = await Promise.all([exchangeTask, tickerTask])
   const marketsBySymbol = new Map(exchange.symbols.map((market) => [market.symbol, market] as const))
   const usdPrice = new Map<string, number>([['USDT', 1], ['USDC', 1], ['FDUSD', 1]])
   for (const ticker of tickers) {

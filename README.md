@@ -113,3 +113,5 @@ Las validaciones incluyen `canTrade`, saldo libre (sin fondos bloqueados), antig
 Son comprobaciones preliminares: no certifican aceptación de una orden, restricciones regionales, filtros dinámicos o límites específicos de cuenta. La profundidad completa, fills parciales, latencia y pérdidas durante ejecución siguen pendientes. Testnet queda bloqueado para el scanner porque su stream todavía usa precios live. El paper trader sigue siendo exclusivamente USDT para no mezclar monedas en el historial existente.
 
 Pruebas de las nuevas reglas: `npm run test:validation`.
+
+El monitor conserva el stream durante la recarga de mercados al conectar la cuenta. Si `/api/markets` falla, utiliza exchangeInfo público live y muestra una advertencia con el error; la evaluación Testnet permanece bloqueada. La consulta de volumen 24 h es opcional y no bloquea los precios. El botón de reconexión también vuelve a cargar las reglas.

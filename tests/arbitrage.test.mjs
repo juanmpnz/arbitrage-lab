@@ -106,3 +106,33 @@ test('connects on TLS port 443 and subscribes in bounded batches', async () => {
     globalThis.WebSocket = previousWebSocket
   }
 })
+
+test('connecting an account falls back to public rules if its market endpoint is missing', async () => {
+  const { loadMarkets } = await import('../src/core/binance.ts')
+  const previousFetch = globalThis.fetch
+  const calls = [], warnings = []
+  globalThis.fetch = async url => {
+    calls.push(url)
+    if (url === '/api/markets') return { ok: false, status: 404 }
+    if (url.includes('ticker/24hr')) throw new Error('Optional volume request unavailable')
+    return { ok: true, json: async () => ({ symbols: markets }) }
+  }
+  try {
+    const loaded = await loadMarkets('USDT', true, message => warnings.push(message))
+    assert.equal(loaded.length, 3)
+    assert.ok(calls.some(url => url.includes('exchangeInfo')))
+    assert.match(warnings[0], /HTTP 404/)
+  } finally { globalThis.fetch = previousFetch }
+})
+
+test('an HTML response from an outdated backend does not break public market loading', async () => {
+  const { loadMarkets } = await import('../src/core/binance.ts')
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async url => {
+    if (url === '/api/markets') return { ok: true, json: async () => { throw new SyntaxError('HTML response') } }
+    if (url.includes('ticker/24hr')) return { ok: false, status: 502 }
+    return { ok: true, json: async () => ({ symbols: markets }) }
+  }
+  try { assert.equal((await loadMarkets('USDT', true)).length, 3) }
+  finally { globalThis.fetch = previousFetch }
+})

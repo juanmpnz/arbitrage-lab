@@ -28,6 +28,8 @@ export default function App() {
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const lastMessage = useRef<number | null>(null)
   const [error, setError] = useState('')
+  const [marketWarning, setMarketWarning] = useState('')
+  const [marketReload, setMarketReload] = useState(0)
   const [isRunning, setIsRunning] = useState(true)
   const [startAsset, setStartAsset] = useState('USDT')
   const [account, setAccount] = useState<Account | null>(null)
@@ -52,12 +54,12 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    setStatus('connecting')
-    books.current.clear(); setMarkets([])
-    loadMarkets(startAsset, accountMode).then((loaded) => { if (!cancelled) setMarkets(loaded) })
-      .catch((cause: unknown) => { if (!cancelled) { setError(cause instanceof Error ? cause.message : 'No se pudieron cargar los mercados.'); setStatus('error') } })
+    setMarketWarning('')
+    if (!markets.length) setStatus('connecting')
+    loadMarkets(startAsset, accountMode, warning => { if (!cancelled) setMarketWarning(warning) }).then((loaded) => { if (!cancelled) { setMarkets(loaded); setError('') } })
+      .catch((cause: unknown) => { if (!cancelled) { const message = cause instanceof Error ? cause.message : 'No se pudieron cargar los mercados.'; setMarketWarning(message); if (!markets.length) { setError(message); setStatus('error') } } })
     return () => { cancelled = true }
-  }, [startAsset, accountMode])
+  }, [startAsset, accountMode, marketReload])
 
   useEffect(() => {
     if (!isRunning || !markets.length) { if (!isRunning) setStatus('stopped'); return }
@@ -158,12 +160,13 @@ export default function App() {
 
       <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> BINANCE SPOT <span className="eyebrow-separator">·</span> TRIANGULAR SCANNER</div><h1>Market overview<span className="heading-period">.</span></h1><p>Señales indicativas calculadas sobre el mejor bid/ask público.</p></div><div className="heading-actions"><button className="secondary-button" onClick={() => setShowSettings(true)}><SlidersHorizontal size={16}/> Parámetros</button><button className={isRunning ? 'stop-button' : 'primary-button'} onClick={() => setIsRunning((running) => !running)}>{isRunning ? <><Square size={14} fill="currentColor"/> Pausar monitor</> : <><Play size={15} fill="currentColor"/> Reanudar</>}</button></div></section>
 
-      <section className="connection-banner"><div className="connection-left"><span className={`connection-icon ${status}`}><Wifi size={17}/></span><div><b>{statusLabel[status]}</b><span>{error || (lastMessage.current ? `Última actualización hace ${Math.floor(freshness! / 1000)} s` : 'Esperando primeras cotizaciones de Binance')}</span></div></div><div className="connection-meta"><span><i className={status === 'live' ? 'status-dot online' : 'status-dot'}/>{status === 'live' ? 'STREAM ACTIVO' : 'STREAM'}</span><span className="connection-divider"/><span>{booksReady.toLocaleString()} <small>/ {markets.length || '—'} libros</small></span><span className="connection-divider"/><span><Activity size={14}/> {messages.current.toLocaleString()} <small>ticks</small></span></div><button className="connection-action" onClick={() => { books.current.clear(); lastMessage.current = null; messages.current = 0; setError(''); setIsRunning(false); window.setTimeout(() => setIsRunning(true), 80) }} aria-label="Reconectar"><RefreshCw size={15}/></button></section>
+      <section className="connection-banner"><div className="connection-left"><span className={`connection-icon ${status}`}><Wifi size={17}/></span><div><b>{statusLabel[status]}</b><span>{error || (lastMessage.current ? `Última actualización hace ${Math.floor(freshness! / 1000)} s` : 'Esperando primeras cotizaciones de Binance')}</span></div></div><div className="connection-meta"><span><i className={status === 'live' ? 'status-dot online' : 'status-dot'}/>{status === 'live' ? 'STREAM ACTIVO' : 'STREAM'}</span><span className="connection-divider"/><span>{booksReady.toLocaleString()} <small>/ {markets.length || '—'} libros</small></span><span className="connection-divider"/><span><Activity size={14}/> {messages.current.toLocaleString()} <small>ticks</small></span></div><button className="connection-action" onClick={() => { books.current.clear(); lastMessage.current = null; messages.current = 0; setError(''); setMarketReload(value => value + 1); setIsRunning(false); window.setTimeout(() => setIsRunning(true), 80) }} aria-label="Reconectar"><RefreshCw size={15}/></button></section>
 
       <section className="panel paper-panel">
         <div className="panel-heading"><div><h2>Evaluación de rutas</h2><p>{accountMode ? 'Saldo y tarifas reales · estimación conservadora · sin ejecución' : 'Exploración pública con costos manuales'}</p></div></div>
         <div className="commission-form"><label htmlFor="start-asset">Activo inicial</label><select id="start-asset" value={startAsset} onChange={event => { setStartAsset(event.target.value); setPaperEnabled(false) }}>{assets.map(asset => <option key={asset}>{asset}</option>)}</select><label htmlFor="route-amount">Importe</label><input id="route-amount" type="number" min="0" step="any" value={amount} onChange={event => setAmount(Number(event.target.value))}/><label><input type="checkbox" checked={accountMode} disabled={!account} onChange={event => { setAccountMode(event.target.checked); setPaperEnabled(false) }}/> Usar mi cuenta</label></div>
         {accountMode && <div className="paper-note"><ShieldCheck size={14}/><span>Disponible: {available} {startAsset}. {account?.environment === 'testnet' ? 'Testnet: evaluación bloqueada porque el stream usa precios live.' : account?.canTrade === false ? 'Binance indica que esta cuenta no puede operar.' : 'Se comprueban saldo, cantidades, mínimos, liquidez del primer nivel y tarifas. Las restricciones específicas de tu cuenta o región aún pueden impedir una orden.'}</span></div>}
+        {marketWarning && <p className="account-error" role="status">{marketWarning}</p>}
         {accountError && <p className="account-error" role="alert">{accountError}</p>}
         {accountMode && <div className="paper-note"><span>{candidates.length} rutas con margen bruto · {opportunities.length} superan validación y umbral neto. Se consultan primero las 20 mejores rutas brutas.<br/>{[...rejectionCounts].slice(0, 6).map(([reason, count]) => <span key={reason}>{count} × {reason}<br/></span>)}{!candidates.length && 'Sin rutas frescas con margen bruto para este activo e importe. No implica que debas aumentar el capital.'}</span></div>}
       </section>
