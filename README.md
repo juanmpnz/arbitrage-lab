@@ -1,10 +1,10 @@
 # Arbitrage Lab
 
-Monitor de investigación de arbitraje triangular Spot con datos públicos de Binance. Incluye un escáner Python de terminal y un panel React con cotizaciones WebSocket. Permite consultar una cuenta Binance en modo lectura mediante un backend local. No envía órdenes.
+Monitor de investigación de arbitraje triangular Spot con datos públicos de Binance. Incluye un escáner Python de terminal y un panel React con cotizaciones WebSocket. Permite consultar una cuenta Binance mediante un backend local y ejecutar ciclos Spot manuales con presupuesto acotado cuando se habilita expresamente el módulo de trading. Está desactivado por defecto.
 
 ## Panel React
 
-Requisitos: Node.js 20.19+ o 22.12+.
+Requisitos: Node.js 22.12+ para panel y backend.
 
 ```bash
 npm install
@@ -51,7 +51,7 @@ npm run dev
 
 Pulsa **Conectar cuenta** en el panel. Las consultas se realizan a través del proxy de Vite hacia el backend local (127.0.0.1:8787). Muestra saldos Spot disponibles/bloqueados y permite consultar comisiones de un símbolo. Las comisiones reales se presentan por componentes: no se aplican automáticamente al escáner, ni el saldo real modifica la cuenta virtual. Reinicia el backend después de editar `.env`. Si cambias `API_PORT`, cambia también el puerto del proxy en `vite.config.ts`.
 
-La API de Binance admite consultas GET mediante `/api/health`, `/api/account`, `/api/markets`, `/api/reference-price` y `/api/commission?symbol=BTCUSDT`; el único POST permitido registra el historial local en `/api/opportunities`; no contiene endpoints de órdenes o retiros. Firma HMAC en el servidor, sincroniza el reloj con Binance, limita el tiempo de espera y reutiliza respuestas por 15 s (saldo) o 60 s (comisiones). El backend escucha únicamente en loopback y rechaza hosts/orígenes externos. Esta configuración es para uso local; no publiques este servicio privado en internet.
+La API de Binance admite consultas GET mediante `/api/health`, `/api/account`, `/api/markets`, `/api/reference-price` y `/api/commission?symbol=BTCUSDT`; además admite POST para historial local y ejecución manual configurada; no contiene endpoints de retiros. Firma HMAC en el servidor, sincroniza el reloj con Binance, limita el tiempo de espera y reutiliza respuestas por 15 s (saldo) o 60 s (comisiones). El backend escucha únicamente en loopback y rechaza hosts/orígenes externos. Esta configuración es para uso local; no publiques este servicio privado en internet.
 
 ```bash
 npm run test:api
@@ -81,11 +81,10 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 
 ## Verificación
 
-- Cuatro pruebas del backend: firma HMAC/reloj, credenciales y errores, Testnet/comisiones, bloqueo de escritura y acceso externo.
-- Siete pruebas del motor TypeScript (motor de rutas, paper trading, conexión, lotes y rechazos WebSocket) y seis pruebas del motor Python aprobadas.
-- Demo Python ejecutada; una señal sintética pasa el umbral configurado.
-- La consulta REST real anterior recibió 3.727 cotizaciones en 6,026 segundos y descartó el snapshot por latencia.
-- La interfaz y la suscripción WebSocket quedan listas para comprobar localmente con `npm install` y `npm run dev`. En el entorno de autoría no está disponible el compilador TypeScript ni el acceso al registro de paquetes, así que no se pudo validar el bundle de Vite aquí.
+- Build React/TypeScript/Vite aprobado.
+- 36 pruebas Node: motor/WebSocket, backend firmado, filtros/tarifas, historial persistente y ejecución simulada.
+- Ejecutor verificado con un exchange simulado: tres tramos completos, presupuesto duradero, exclusión entre procesos, tokens de un solo uso, rechazo de duplicados, pérdida de rentabilidad, fills parciales, timeout incierto, parada y conciliación.
+- No se enviaron órdenes reales ni se validaron claves de usuario o una ejecución completa contra Spot Testnet desde este entorno.
 
 ## Próximo trabajo
 
@@ -125,6 +124,25 @@ La misma ruta, parámetros e importe dentro de una sesión se agrupan mientras s
 
 La captura sigue en el navegador: requiere pestaña abierta y backend encendido. Se toman las primeras 50 oportunidades positivas en cada evaluación y se envían observaciones agrupadas cada dos segundos; las señales más breves que la frecuencia del scanner pueden no detectarse. Hasta 20 observaciones se retienen temporalmente si falla el backend; aparece una advertencia si se desborda la cola. No se recuperan señales anteriores a esta actualización.
 
-GET `/api/opportunities` lee registros; POST `/api/opportunities` admite exclusivamente observaciones JSON locales, con validación, límites de tamaño y protección de origen. Los registros son reportes del scanner, no órdenes ni instrucciones confiables de ejecución. La conexión Binance sigue siendo de lectura: no hay endpoints para enviar órdenes o retirar fondos. Historial y paper trading no modifican el saldo real.
+GET `/api/opportunities` lee registros; POST `/api/opportunities` admite exclusivamente observaciones JSON locales, con validación, límites de tamaño y protección de origen. Los registros son reportes del scanner, no órdenes ni instrucciones confiables de ejecución. El historial y paper trading no modifican el saldo real. El módulo de ejecución Spot separado permite órdenes únicamente cuando está habilitado y se envía un ciclo manual; nunca incorpora retiros.
 
 Pruebas: `npm run test:history`.
+
+
+### Ejecución Spot manual (dinero real)
+
+El ejecutor está desactivado por defecto. No hace trading automáticamente cuando el scanner encuentra señales. Para habilitarlo, agrega `BINANCE_TRADING_ENABLED=true` al `.env` local y reinicia `npm run dev:api`. La clave necesita permiso de trading Spot; no requiere ni incorpora retiros, margin o futures. Con `BINANCE_TESTNET=true` usa exclusivamente el dominio de Spot Testnet y claves separadas.
+
+En el panel «Ejecución Spot», pega los tres símbolos en el orden del ciclo o pulsa «Usar mejor ruta». Live inicia y termina exclusivamente en USDS, conforme al saldo y presupuesto acordados; Testnet usa USDT porque puede no ofrecer USDS. El máximo inicial por intento es 6,6 unidades, con reserva adicional del 5% dentro del presupuesto acumulado de 7. El presupuesto y las órdenes persisten en `data/execution-live.json` o `data/execution-testnet.json`. No se reinicia al actualizar la página ni después de un ciclo: está pensado para una prueba acotada, no como bot continuo. No borres estos diarios para eludir bloqueos o mientras haya órdenes pendientes.
+
+«Verificar operación» consulta saldo, mercados, tarifas y mejores bid/ask desde el backend, deriva la ruta y calcula precios límite y cantidades redondeadas. Exige margen neto conservador superior a 1 pb y menor al 10%, y prueba la primera orden mediante `/api/v3/order/test`. No confía en el beneficio, precio, ruta o volumen enviados por el navegador. La previsualización expira en 15 segundos. «Ejecutar este ciclo con dinero real» consume ese token una sola vez y vuelve a validar todo antes de operar.
+
+Cada tramo utiliza LIMIT FOK con precio alrededor del mejor bid/ask y margen de 5 pb, ajustado al tick del mercado. Se prueba la orden, se exige antigüedad inferior a 1,5 s y se registra el identificador antes del POST a Binance. Para el siguiente tramo usa la cantidad realmente recibida y deduce las comisiones cobradas en ese activo. No utiliza tus saldos preexistentes de los activos intermedios. Las comisiones en BNB u otros activos quedan en el detalle de fills, y los saldos reales se consultan después; la diferencia en USDS sola no es una ganancia neta si también se gastó BNB.
+
+Un tramo expirado, parcial, rechazado, con comisiones incompletas o rentabilidad perdida detiene el ciclo. Un error de envío se consulta por `origClientOrderId` y nunca se reenvía. Puede dejar activos intermedios, que no se liquidan automáticamente. El estado REVIEW impide nuevos ciclos incluso después de reiniciar. «Consultar órdenes y saldos en Binance» concilia órdenes y trades para inspección, pero no reanuda operaciones ni elimina el bloqueo. Un reinicio con un ciclo en curso también exige revisión.
+
+«Detener siguientes tramos» no cancela una orden ya enviada; bloquea los siguientes tramos y nuevas ejecuciones durante esa sesión del servidor. Las órdenes FOK no se dejan abiertas deliberadamente. El retorno previo es una estimación y el ciclo puede perder dinero. Los filtros dinámicos/restricciones de la cuenta se comprueban también mediante test de orden y Binance puede rechazar la orden real.
+
+Endpoints locales: GET `/api/execution`; POST `/api/execution/preview`, `/api/execution/run`, `/api/execution/stop`, `/api/execution/reconcile`. Solo JSON, acceso local y límites de tamaño. No existen endpoints de retiros. Esta funcionalidad no se ha probado con fondos reales ni con claves de usuario en este entorno. Pruebas con un exchange simulado: `npm run test:execution`.
+
+El ejecutor crea además un bloqueo de archivo durante cada ciclo para impedir operaciones concurrentes desde dos procesos locales que compartan el mismo diario. Si el servidor se interrumpe, un bloqueo o una ejecución pendiente requieren inspección; no se elimina automáticamente para continuar operando. Si no llegó a enviarse ninguna orden, la reserva del intento se libera.

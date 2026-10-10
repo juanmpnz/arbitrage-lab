@@ -10,7 +10,7 @@ export function createBinanceReader({ apiKey, apiSecret, testnet = false, fetchI
   let clockCheckedAt = -Infinity
   const cache = new Map()
   const pending = new Map()
-  async function request(path, params, signed = false) {
+  async function request(path, params, signed = false, method = 'GET') {
     const query = new URLSearchParams(params)
     if (signed) {
       query.set('timestamp', String(Math.round(now() + offset)))
@@ -19,7 +19,7 @@ export function createBinanceReader({ apiKey, apiSecret, testnet = false, fetchI
     }
     let response
     try {
-      response = await fetchImpl(`${base}${path}?${query}`, { headers: signed ? { 'X-MBX-APIKEY': apiKey } : {}, signal: AbortSignal.timeout(10_000) })
+      response = await fetchImpl(`${base}${path}?${query}`, { method, headers: signed ? { 'X-MBX-APIKEY': apiKey } : {}, signal: AbortSignal.timeout(10_000) })
     } catch { throw new ApiError(502, 'No se pudo contactar con Binance. Comprueba la conexión del backend.') }
     let data
     try { data = await response.json() } catch { throw new ApiError(502, 'Binance devolvió una respuesta inválida.') }
@@ -32,16 +32,16 @@ export function createBinanceReader({ apiKey, apiSecret, testnet = false, fetchI
         '-1121': 'Este símbolo no está disponible en el entorno seleccionado.',
       }
       const message = response.status === 429 || response.status === 418 ? 'Binance limitó las consultas. Espera antes de volver a intentar.' : messages[String(data.code)] ?? `Binance rechazó la consulta (código ${Number.isFinite(data.code) ? data.code : response.status}).`
-      throw new ApiError(502, message)
+      const error = new ApiError(502, message); error.binanceCode = data.code; error.uncertain = response.status >= 500 || [-1006, -1007].includes(data.code); throw error
     }
     return data
   }
-  async function signed(path, params, ttl) {
+  async function signed(path, params, ttl, method = 'GET') {
     if (!apiKey || !apiSecret) throw new ApiError(503, 'Configura BINANCE_API_KEY y BINANCE_API_SECRET en el .env del backend y reinícialo.')
-    const key = `${path}:${JSON.stringify(params)}`
+    const key = `${method}:${path}:${JSON.stringify(params)}`
     const cached = cache.get(key)
-    if (cached && now() - cached.at < ttl) return cached.value
-    if (pending.has(key)) return pending.get(key)
+    if (method === 'GET' && cached && now() - cached.at < ttl) return cached.value
+    if (method === 'GET' && ttl > 0 && pending.has(key)) return pending.get(key)
     const operation = (async () => {
       if (now() - clockCheckedAt > 60_000) {
         const started = now()
@@ -50,7 +50,7 @@ export function createBinanceReader({ apiKey, apiSecret, testnet = false, fetchI
         offset = time.serverTime - (started + now()) / 2
         clockCheckedAt = now()
       }
-      const value = await request(path, params, true)
+      const value = await request(path, params, true, method)
       cache.set(key, { at: now(), value })
       return value
     })()
@@ -80,14 +80,22 @@ export function createBinanceReader({ apiKey, apiSecret, testnet = false, fetchI
       cache.set(key, { at: now(), value })
       return value
     },
-    async account() {
-      const data = await signed('/api/v3/account', { omitZeroBalances: 'true' }, 15_000)
+    async book(symbol) {
+      if (!/^[A-Z0-9]{2,30}$/.test(symbol)) throw new ApiError(400, 'Símbolo inválido.')
+      return { ...await request('/api/v3/ticker/bookTicker', { symbol }), receivedAt: now() }
+    },
+    async testOrder(params) { return signed('/api/v3/order/test', params, 0, 'POST') },
+    async placeOrder(params) { return signed('/api/v3/order', params, 0, 'POST') },
+    async queryOrder(symbol, clientOrderId) { return signed('/api/v3/order', { symbol, origClientOrderId: clientOrderId }, 0) },
+    async orderTrades(symbol, orderId) { return signed('/api/v3/myTrades', { symbol, orderId: String(orderId), limit: '1000' }, 0) },
+    async account(fresh = false) {
+      const data = await signed('/api/v3/account', { omitZeroBalances: 'true' }, fresh ? 0 : 15_000)
       return { environment: testnet ? 'testnet' : 'live', fetchedAt: now(), canTrade: data.canTrade, accountType: data.accountType, balances: (data.balances ?? []).filter(item => Number(item.free) > 0 || Number(item.locked) > 0).map(({ asset, free, locked }) => ({ asset, free, locked })) }
     },
     async commission(symbol) {
       if (!/^[A-Z0-9]{2,30}$/.test(symbol)) throw new ApiError(400, 'Introduce un símbolo válido, por ejemplo BTCUSDT.')
       const data = await signed('/api/v3/account/commission', { symbol }, 60_000)
-      return { fetchedAt: cache.get(`/api/v3/account/commission:${JSON.stringify({ symbol })}`).at, symbol: data.symbol, standardCommission: data.standardCommission, specialCommission: data.specialCommission, taxCommission: data.taxCommission, discount: data.discount }
+      return { fetchedAt: cache.get(`GET:/api/v3/account/commission:${JSON.stringify({ symbol })}`).at, symbol: data.symbol, standardCommission: data.standardCommission, specialCommission: data.specialCommission, taxCommission: data.taxCommission, discount: data.discount }
     },
   }
 }
