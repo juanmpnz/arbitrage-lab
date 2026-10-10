@@ -1,4 +1,6 @@
+import type { SymbolFilter } from './validation'
 export type Market = {
+  filters?: SymbolFilter[]
   symbol: string
   baseAsset: string
   quoteAsset: string

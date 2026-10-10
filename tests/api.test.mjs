@@ -68,3 +68,31 @@ test('local HTTP API never accepts write methods or cross-site requests', async 
     assert.equal(calls, 1)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
+
+test('reads exchange filters and averaged/last prices from the configured environment with caching', async () => {
+  const calls = []
+  const reader = createBinanceReader({ testnet: true, now: () => 1000, fetchImpl: async url => {
+    calls.push(url)
+    const data = url.includes('exchangeInfo') ? { symbols: [{ symbol: 'BTCUSDT', filters: [{ filterType: 'LOT_SIZE' }] }] } : url.includes('avgPrice') ? { price: '100', mins: 5 } : { price: '101' }
+    return { ok: true, json: async () => data }
+  } })
+  const markets = await reader.markets()
+  assert.equal(markets.environment, 'testnet')
+  assert.equal(markets.symbols[0].filters[0].filterType, 'LOT_SIZE')
+  const price = await reader.referencePrice('BTCUSDT')
+  assert.deepEqual(price, { price: '100', lastPrice: '101', mins: 5, fetchedAt: 1000 })
+  await reader.markets(); await reader.referencePrice('BTCUSDT')
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every(url => url.startsWith('https://testnet.binance.vision/')))
+  await assert.rejects(reader.referencePrice('../bad'), /inválido/)
+})
+
+test('cached commissions retain their source timestamp, rather than appearing fresh on each read', async () => {
+  let clock = 1000
+  const reader = createBinanceReader({ apiKey: 'k', apiSecret: 's', now: () => clock, fetchImpl: async url => ({ ok: true, json: async () => url.includes('/time?') ? { serverTime: clock } : { symbol: 'BTCUSDT' } }) })
+  assert.equal((await reader.commission('BTCUSDT')).fetchedAt, 1000)
+  clock = 45000
+  assert.equal((await reader.commission('BTCUSDT')).fetchedAt, 1000)
+  clock = 62000
+  assert.equal((await reader.commission('BTCUSDT')).fetchedAt, 62000)
+})

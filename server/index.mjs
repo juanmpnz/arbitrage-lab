@@ -16,6 +16,8 @@ export function createApiServer(reader) {
     const url = new URL(req.url, 'http://localhost')
     try {
       if (url.pathname === '/api/health') return send(200, { mode: 'read-only', configured: reader.configured, environment: reader.environment })
+      if (url.pathname === '/api/markets') return send(200, await reader.markets())
+      if (url.pathname === '/api/reference-price') return send(200, await reader.referencePrice(url.searchParams.get('symbol') ?? ''))
       if (url.pathname === '/api/account') return send(200, await reader.account())
       if (url.pathname === '/api/commission') return send(200, await reader.commission(url.searchParams.get('symbol') ?? ''))
       return send(404, { error: 'Endpoint no disponible.' })

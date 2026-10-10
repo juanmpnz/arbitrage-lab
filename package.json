@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "dev:api": "node server/index.mjs",
@@ -11,7 +13,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test:python": "python3 -m unittest discover -s tests -v",
-    "test:engine": "node --experimental-strip-types tests/arbitrage.test.mjs"
+    "test:engine": "node --experimental-strip-types tests/arbitrage.test.mjs",
+    "test:validation": "node --experimental-strip-types tests/validation.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

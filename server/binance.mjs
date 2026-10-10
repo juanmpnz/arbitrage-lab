@@ -60,14 +60,34 @@ export function createBinanceReader({ apiKey, apiSecret, testnet = false, fetchI
   return {
     configured: Boolean(apiKey && apiSecret),
     environment: testnet ? 'testnet' : 'live',
+    async markets() {
+      const key = 'markets'
+      const cached = cache.get(key)
+      if (cached && now() - cached.at < 60_000) return cached.value
+      const info = await request('/api/v3/exchangeInfo', {})
+      const value = { environment: testnet ? 'testnet' : 'live', symbols: info.symbols }
+      cache.set(key, { at: now(), value })
+      return value
+    },
+    async referencePrice(symbol) {
+      if (!/^[A-Z0-9]{2,30}$/.test(symbol)) throw new ApiError(400, 'Símbolo inválido.')
+      const key = `price:${symbol}`
+      const cached = cache.get(key)
+      if (cached && now() - cached.at < 15_000) return cached.value
+      const data = await request('/api/v3/avgPrice', { symbol })
+      const ticker = await request('/api/v3/ticker/price', { symbol })
+      const value = { price: data.price, lastPrice: ticker.price, mins: data.mins, fetchedAt: now() }
+      cache.set(key, { at: now(), value })
+      return value
+    },
     async account() {
       const data = await signed('/api/v3/account', { omitZeroBalances: 'true' }, 15_000)
-      return { environment: testnet ? 'testnet' : 'live', fetchedAt: now(), accountType: data.accountType, balances: (data.balances ?? []).filter(item => Number(item.free) > 0 || Number(item.locked) > 0).map(({ asset, free, locked }) => ({ asset, free, locked })) }
+      return { environment: testnet ? 'testnet' : 'live', fetchedAt: now(), canTrade: data.canTrade, accountType: data.accountType, balances: (data.balances ?? []).filter(item => Number(item.free) > 0 || Number(item.locked) > 0).map(({ asset, free, locked }) => ({ asset, free, locked })) }
     },
     async commission(symbol) {
       if (!/^[A-Z0-9]{2,30}$/.test(symbol)) throw new ApiError(400, 'Introduce un símbolo válido, por ejemplo BTCUSDT.')
       const data = await signed('/api/v3/account/commission', { symbol }, 60_000)
-      return { symbol: data.symbol, standardCommission: data.standardCommission, specialCommission: data.specialCommission, taxCommission: data.taxCommission, discount: data.discount }
+      return { fetchedAt: cache.get(`/api/v3/account/commission:${JSON.stringify({ symbol })}`).at, symbol: data.symbol, standardCommission: data.standardCommission, specialCommission: data.specialCommission, taxCommission: data.taxCommission, discount: data.discount }
     },
   }
 }

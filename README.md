@@ -98,3 +98,18 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 - [Spot REST API](https://developers.binance.com/en/docs/products/spot/rest-api)
 - [Spot WebSocket Streams](https://developers.binance.com/en/docs/products/spot/web-socket-streams)
 - [Market data only](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md)
+
+
+### Evaluación con cuenta (solo lectura)
+
+Conecta la cuenta en el panel: se activa «Usar mi cuenta», se elige un activo con saldo (priorizando USDC/USDS/USDT/EUR) y se limita el importe inicial al disponible. Puedes elegir otro activo o desactivar este modo para explorar con costos manuales. El saldo del scanner se consulta cada 15 segundos; después de 60 segundos sin actualizar se bloquean las rutas.
+
+El scanner carga `exchangeInfo` desde el entorno del backend, prioriza pares del activo inicial y consulta automáticamente comisiones y precios de referencia de las 20 mejores rutas con margen bruto. Las consultas están limitadas a tres símbolos por segundo, con caché. Una ruta sin tarifas vigentes o reglas completas queda pendiente, nunca asume comisión cero. Se incluyen tasas taker, comprador/vendedor, especiales e impuestos. El factor BNB 0.75 significa pagar el 75% de la tasa estándar, es decir, una reducción del 25%.
+
+El descuento se estima solo con ambos indicadores habilitados, saldo libre BNB suficiente para los tres tramos y una conversión directa BNB fresca disponible. Si no puede verificarse, se usa la tarifa sin descuento. Su costo económico se descuenta igualmente del resultado; no se confunde la salida con ganancia gratuita por pagar desde otro saldo. Se descarta conservadoramente el polvo de redondeo.
+
+Las validaciones incluyen `canTrade`, saldo libre (sin fondos bloqueados), antigüedad, liquidez del primer nivel, LOT_SIZE, MARKET_LOT_SIZE y MIN_NOTIONAL/NOTIONAL aplicables a órdenes market. Para mínimos con promedio se exige que `avgPrice.mins` coincida con la ventana del filtro; si no coincide, la ruta se bloquea. Los filtros con ventana cero utilizan el último precio. Se muestran motivos de descarte.
+
+Son comprobaciones preliminares: no certifican aceptación de una orden, restricciones regionales, filtros dinámicos o límites específicos de cuenta. La profundidad completa, fills parciales, latencia y pérdidas durante ejecución siguen pendientes. Testnet queda bloqueado para el scanner porque su stream todavía usa precios live. El paper trader sigue siendo exclusivamente USDT para no mezclar monedas en el historial existente.
+
+Pruebas de las nuevas reglas: `npm run test:validation`.

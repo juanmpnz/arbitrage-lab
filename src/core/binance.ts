@@ -7,7 +7,7 @@ const SOCKET = 'wss://stream.binance.com:443/ws'
 const MAX_STREAMS = 900
 const SUBSCRIPTION_BATCH_SIZE = 100
 const SUBSCRIPTION_INTERVAL_MS = 300
-const BRIDGE_ASSETS = new Set(['USDT', 'USDC', 'BTC', 'ETH', 'BNB', 'FDUSD'])
+const BRIDGE_ASSETS = new Set(['USDT', 'USDC', 'BTC', 'ETH', 'BNB', 'FDUSD', 'USDS', 'EUR'])
 
 type Ticker24h = { symbol: string; lastPrice: string; quoteVolume: string }
 type ExchangeInfo = { symbols: Market[] }
@@ -18,9 +18,9 @@ type Handlers = {
   onError: (message: string) => void
 }
 
-export async function loadMarkets(): Promise<Market[]> {
+export async function loadMarkets(startAsset = 'USDT', fromBackend = false): Promise<Market[]> {
   const [exchangeResponse, tickerResponse] = await Promise.all([
-    fetch(`${REST}/exchangeInfo`, { cache: 'no-store' }),
+    fetch(fromBackend ? '/api/markets' : `${REST}/exchangeInfo`, { cache: 'no-store' }),
     fetch(`${REST}/ticker/24hr`, { cache: 'no-store' }),
   ])
   if (!exchangeResponse.ok || !tickerResponse.ok) throw new Error('Binance no respondió al cargar los mercados.')
@@ -36,8 +36,8 @@ export async function loadMarkets(): Promise<Market[]> {
     const market = marketsBySymbol.get(ticker.symbol)
     return [ticker.symbol, Number(ticker.quoteVolume) * (usdPrice.get(market?.quoteAsset ?? '') ?? 0)] as const
   }))
-  const eligible = exchange.symbols.filter((market) => market.status === 'TRADING' && market.isSpotTradingAllowed && (BRIDGE_ASSETS.has(market.baseAsset) || BRIDGE_ASSETS.has(market.quoteAsset)))
-  eligible.sort((a, b) => (volume.get(b.symbol) ?? 0) - (volume.get(a.symbol) ?? 0))
+  const eligible = exchange.symbols.filter((market) => market.status === 'TRADING' && market.isSpotTradingAllowed && (market.baseAsset === startAsset || market.quoteAsset === startAsset || BRIDGE_ASSETS.has(market.baseAsset) || BRIDGE_ASSETS.has(market.quoteAsset)))
+  eligible.sort((a, b) => Number(b.baseAsset === startAsset || b.quoteAsset === startAsset) - Number(a.baseAsset === startAsset || a.quoteAsset === startAsset) || (volume.get(b.symbol) ?? 0) - (volume.get(a.symbol) ?? 0))
   return eligible.slice(0, MAX_STREAMS)
 }
 
