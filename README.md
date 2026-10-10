@@ -16,6 +16,7 @@ El navegador consulta `exchangeInfo` y `ticker/24hr` para elegir hasta 900 pares
 ```bash
 npm run build
 npm run preview
+npm run test:engine
 ```
 
 El monitor muestra solo rutas cuyas tres cotizaciones tengan menos de dos segundos de antigüedad al calcular. Para cada pata usa el ask al comprar y el bid al vender, descuenta la comisión y el deslizamiento configurados, y limita el tamaño por la cantidad publicada en el mejor precio. El capital es virtual y cada oportunidad representa una simulación independiente.
@@ -46,7 +47,7 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 
 ## Verificación
 
-- Seis pruebas del motor Python aprobadas.
+- Cuatro pruebas del motor TypeScript y seis pruebas del motor Python aprobadas.
 - Demo Python ejecutada; una señal sintética pasa el umbral configurado.
 - La consulta REST real anterior recibió 3.727 cotizaciones en 6,026 segundos y descartó el snapshot por latencia.
 - La interfaz y la suscripción WebSocket quedan listas para comprobar localmente con `npm install` y `npm run dev`. En el entorno de autoría no está disponible el compilador TypeScript ni el acceso al registro de paquetes, así que no se pudo validar el bundle de Vite aquí.
