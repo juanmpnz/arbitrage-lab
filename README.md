@@ -169,3 +169,10 @@ El panel «Ejecución Spot» muestra estado automático, stream, ciclos, motivo 
 El backend necesita seguir encendido y conectado: cerrar el navegador no lo detiene; apagar/suspender el equipo, cerrar el proceso o perder conectividad sí impide evaluar/operar. Para funcionar cuando el equipo está apagado necesita despliegue en un servidor siempre encendido; ese despliegue no se ha realizado. No hay rentabilidad garantizada: puede permanecer esperando sin encontrar una ruta neta, y una ejecución puede perder dinero o dejar activos intermedios.
 
 Pruebas del worker, sin fondos reales: `npm run test:automatic`.
+
+
+### Centro de operaciones
+
+La interfaz prioriza el estado del servidor, el presupuesto acumulado y las órdenes registradas. Cuenta, historial y laboratorio se despliegan mediante acordeones accesibles. Consultar el saldo no activa el automático. La configuración del automático se muestra en Operación real; los parámetros del laboratorio solo afectan a la exploración local y al saldo virtual.
+
+La vista Three.js representa la mejor señal local disponible con sus tres activos y conversiones. Permite rotar, acercar y seleccionar tramos, con botones alternativos al canvas y un detalle textual si WebGL no está disponible. No muestra rutas ficticias cuando no hay señales. El módulo 3D se carga por separado.
