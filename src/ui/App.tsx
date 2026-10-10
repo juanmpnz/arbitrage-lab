@@ -37,7 +37,7 @@ export default function App() {
   useEffect(() => {
     if (!isRunning || !markets.length) { if (!isRunning) setStatus('stopped'); return }
     const disconnect = connectMarketStream(markets, {
-      onStatus: setStatus,
+      onStatus: (nextStatus) => { setStatus(nextStatus); if (nextStatus === 'live') setError('') },
       onQuote: (quote) => { books.current.set(quote.symbol, quote); messages.current += 1; lastMessage.current = quote.receivedAt },
       onStats: ({ lastMessageAt }) => { if (lastMessageAt) lastMessage.current = lastMessageAt },
       onError: setError,

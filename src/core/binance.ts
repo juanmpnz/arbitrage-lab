@@ -22,7 +22,7 @@ export async function loadMarkets(): Promise<Market[]> {
   if (!exchangeResponse.ok || !tickerResponse.ok) throw new Error('Binance no respondió al cargar los mercados.')
   const exchange = await exchangeResponse.json() as ExchangeInfo
   const tickers = await tickerResponse.json() as Ticker24h[]
-  const marketsBySymbol = new Map(exchange.symbols.map((market) => [market.symbol, market]))
+  const marketsBySymbol = new Map(exchange.symbols.map((market) => [market.symbol, market] as const))
   const usdPrice = new Map<string, number>([['USDT', 1], ['USDC', 1], ['FDUSD', 1]])
   for (const ticker of tickers) {
     const market = marketsBySymbol.get(ticker.symbol)
@@ -30,7 +30,7 @@ export async function loadMarkets(): Promise<Market[]> {
   }
   const volume = new Map(tickers.map((ticker) => {
     const market = marketsBySymbol.get(ticker.symbol)
-    return [ticker.symbol, Number(ticker.quoteVolume) * (usdPrice.get(market?.quoteAsset ?? '') ?? 0)]
+    return [ticker.symbol, Number(ticker.quoteVolume) * (usdPrice.get(market?.quoteAsset ?? '') ?? 0)] as const
   }))
   const eligible = exchange.symbols.filter((market) => market.status === 'TRADING' && market.isSpotTradingAllowed && (BRIDGE_ASSETS.has(market.baseAsset) || BRIDGE_ASSETS.has(market.quoteAsset)))
   eligible.sort((a, b) => (volume.get(b.symbol) ?? 0) - (volume.get(a.symbol) ?? 0))
