@@ -1,6 +1,6 @@
 # Arbitrage Lab
 
-Monitor de investigación de arbitraje triangular Spot con datos públicos de Binance. Incluye un escáner Python de terminal y un panel React con cotizaciones WebSocket. No gestiona cuentas y no envía órdenes.
+Monitor de investigación de arbitraje triangular Spot con datos públicos de Binance. Incluye un escáner Python de terminal y un panel React con cotizaciones WebSocket. Permite consultar una cuenta Binance en modo lectura mediante un backend local. No envía órdenes.
 
 ## Panel React
 
@@ -29,6 +29,34 @@ Este primer simulador modela una conversión completa e instantánea con las cot
 
 Si el navegador bloquea la conexión a Binance por red, país o CORS, el panel lo indicará. No hay proxy para sortear bloqueos. El WebSocket del navegador responde automáticamente a los controles de protocolo y se rota antes del límite de 24 horas; al cerrarse, intenta reconectar con espera creciente.
 
+## Conectar cuenta Binance (solo lectura)
+
+Se necesita Node.js 22.12+ para el backend. En la raíz del repo:
+
+```bash
+cp .env.example .env
+```
+
+Completa `BINANCE_API_KEY` y `BINANCE_API_SECRET` en `.env` con una clave HMAC de Binance que tenga permiso de lectura. Mantén trading y retiros desactivados y restringe la clave a la IP pública desde la que se conectará el backend. `BINANCE_TESTNET=false` consulta tu cuenta Spot real; para Testnet usa `true` y claves exclusivas de ese entorno. Las claves y archivos `.env` están excluidos de Git; nunca uses el prefijo `VITE_` para secretos.
+
+En dos terminales, desde la raíz:
+
+```bash
+npm run dev:api
+```
+
+```bash
+npm run dev
+```
+
+Pulsa **Conectar cuenta** en el panel. Las consultas se realizan a través del proxy de Vite hacia el backend local (127.0.0.1:8787). Muestra saldos Spot disponibles/bloqueados y permite consultar comisiones de un símbolo. Las comisiones reales se presentan por componentes: no se aplican automáticamente al escáner, ni el saldo real modifica la cuenta virtual. Reinicia el backend después de editar `.env`. Si cambias `API_PORT`, cambia también el puerto del proxy en `vite.config.ts`.
+
+La API admite solo GET `/api/health`, `/api/account` y `/api/commission?symbol=BTCUSDT`; no contiene endpoints de órdenes o retiros. Firma HMAC en el servidor, sincroniza el reloj con Binance, limita el tiempo de espera y reutiliza respuestas por 15 s (saldo) o 60 s (comisiones). El backend escucha únicamente en loopback y rechaza hosts/orígenes externos. Esta configuración es para uso local; no publiques este servicio privado en internet.
+
+```bash
+npm run test:api
+```
+
 ## Escáner Python
 
 Requisitos: Python 3.11+; solo biblioteca estándar.
@@ -53,6 +81,7 @@ El modo demo usa precios inventados y marca la salida como sintética. El modo l
 
 ## Verificación
 
+- Cuatro pruebas del backend: firma HMAC/reloj, credenciales y errores, Testnet/comisiones, bloqueo de escritura y acceso externo.
 - Siete pruebas del motor TypeScript (motor de rutas, paper trading, conexión, lotes y rechazos WebSocket) y seis pruebas del motor Python aprobadas.
 - Demo Python ejecutada; una señal sintética pasa el umbral configurado.
 - La consulta REST real anterior recibió 3.727 cotizaciones en 6,026 segundos y descartó el snapshot por latencia.
